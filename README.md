@@ -2,7 +2,7 @@
 
 Lock files and folders on Windows 10 and Windows 11 with a PIN or password. Right-click, lock, done.
 
-- **Right-click → Lock with FileLocker** on any file or folder.
+- **Open FileLocker → Lock a file… / Lock a folder…**, or right-click any file or folder → **Lock with FileLocker**.
 - **Double-click a locked file** → type your PIN → it opens.
 - **Padlock icon** on locked files and folders.
 - **Real encryption** (AES-256). Files are encrypted *in place*: no copies, no zip files, no extra disk space.
@@ -21,21 +21,29 @@ Needs Windows 10 (version 1803 or newer) or Windows 11. Nothing else to install.
 
 ## Use
 
+Open **FileLocker** from the Start menu. It lists everything you've locked: **Locked**, **Open** (unlocked for now) or **Can't find it** (moved or deleted).
+
 | To… | Do this |
 | --- | --- |
-| Lock a file | Right-click it → **Lock with FileLocker** |
-| Lock a folder | Right-click it → **Lock folder with FileLocker** |
-| Open a locked file | Double-click it, then type your PIN |
-| Unlock a whole folder | Right-click it → **Unlock folder with FileLocker** |
-| Lock again everything you unlocked | Right-click empty space on the desktop or in a folder → **Lock everything I unlocked (FileLocker)**. Or use the Start-menu shortcut. |
-| Change your PIN | Start menu → **FileLocker** → *Change PIN or password* |
-| Forgot your PIN | Double-click a locked file → *Forgot it? Use your recovery key* |
+| Lock a file or folder | In FileLocker: **Lock a file…** / **Lock a folder…**. Or right-click it → **Lock with FileLocker** |
+| Open something locked | Double-click it (in FileLocker or in your folders), then type your PIN |
+| Lock it again when you're done | In FileLocker: **Lock everything now** (or select it → **Lock again**). Also in the right-click menu on empty space: **Lock everything I unlocked** |
+| Unlock a whole folder | Right-click it → **Unlock folder with FileLocker**, or double-click it in FileLocker |
+| **Remove a lock for good** | In FileLocker: select it → **Remove lock…** → type your PIN. Only possible from the app, and the PIN is always asked for, even if you typed it a minute ago |
+| Change your PIN | FileLocker → *Change PIN or password* |
+| Forgot your PIN | FileLocker → *Forgot PIN?*, or double-click a locked file → *Forgot it? Use your recovery key* |
 
 **On Windows 11** the FileLocker entries sit under **"Show more options"** in the right-click menu. Holding **Shift** while right-clicking opens that full menu directly.
 
 After you type your PIN, FileLocker remembers it for **5 minutes**, so opening several files in a row only asks once. *Lock everything* ends that early.
 
 Selecting many files and choosing *Lock* (or *Unlock*) handles them together in one window, with one PIN prompt.
+
+## Updating
+
+FileLocker → **Check for updates**. If there's a new version it downloads and installs it for you. Or download the newest `FileLocker-Setup.exe` from Releases and run it over the old one.
+
+Either way, your PIN, recovery key, list and locked files stay exactly as they are. Nothing needs uninstalling first.
 
 ## What "locked" means
 

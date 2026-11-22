@@ -74,13 +74,13 @@ namespace FileLocker
                     r = _queue.Dequeue();
                 }
                 _current = r;
-                try { Handle(locker, r); }
+                try { Execute(locker, r); }
                 catch (Exception ex) { Error(r.Path, ex.Message); }
             }
             BeginInvoke(new Action(Finish));
         }
 
-        private void Handle(Locker locker, Request r)
+        private void Execute(Locker locker, Request r)
         {
             switch (r.Verb)
             {
