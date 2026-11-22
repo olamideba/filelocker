@@ -1,0 +1,7 @@
+bin/
+obj/
+out/
+testbin/
+installer/Output/
+*.user
+.vs/
