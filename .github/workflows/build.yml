@@ -27,14 +27,21 @@ jobs:
           ./testbin/FileLocker.Tests.exe $env:GITHUB_WORKSPACE
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
+      - name: Work out version
+        shell: pwsh
+        run: |
+          $version = if ($env:GITHUB_REF_TYPE -eq 'tag') { $env:GITHUB_REF_NAME.TrimStart('v') } else { ([xml](Get-Content src/FileLocker/FileLocker.csproj)).Project.PropertyGroup.Version }
+          "VERSION=$version" | Out-File -FilePath $env:GITHUB_ENV -Append
+          "Version: $version"
+
       - name: Build app
         shell: pwsh
-        run: dotnet build src/FileLocker -c Release -o out
+        run: dotnet build src/FileLocker -c Release -o out "-p:Version=$env:VERSION"
 
       - name: Build installer
         shell: pwsh
         run: |
-          $version = if ($env:GITHUB_REF_TYPE -eq 'tag') { $env:GITHUB_REF_NAME.TrimStart('v') } else { '0.1.0' }
+          $version = $env:VERSION
           choco install innosetup -y --no-progress | Out-Null
           & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" "/DAppVersion=$version" installer\FileLocker.iss
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }

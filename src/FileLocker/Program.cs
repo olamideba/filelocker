@@ -18,7 +18,7 @@ namespace FileLocker
     internal static class Program
     {
         public const string RepoUrl = "https://github.com/olamideba/filelocker";
-        private static readonly string[] Verbs = { "lock", "unlock", "open", "lockall" };
+        private static readonly string[] Verbs = { "lock", "unlock", "open", "lockall", "remove" };
 
         private static string Suffix => Environment.UserName + "." + Process.GetCurrentProcess().SessionId;
         private static string MutexName => @"Local\FileLocker.Worker." + Suffix;
@@ -31,6 +31,7 @@ namespace FileLocker
         //   FileLocker.exe unlock <path>   unlock a file or folder
         //   FileLocker.exe open <path>     unlock a file, then open it
         //   FileLocker.exe lockall         re-lock everything unlocked with FileLocker
+        //   FileLocker.exe remove <path>   remove the lock for good (always asks for the PIN)
         [STAThread]
         private static void Main(string[] args)
         {
@@ -49,7 +50,12 @@ namespace FileLocker
 
             if (verb == "" || verb == "setup")
             {
-                Application.Run(Vault.IsSetUp ? (Form)new MainForm() : new SetupForm());
+                if (!Vault.IsSetUp)
+                {
+                    Application.Run(new SetupForm());
+                    if (!Vault.IsSetUp) return;
+                }
+                Application.Run(new MainForm());
                 return;
             }
             if (!Verbs.Contains(verb))

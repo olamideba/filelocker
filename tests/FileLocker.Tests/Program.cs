@@ -30,6 +30,7 @@ namespace FileLocker.Tests
                 Run("interrupted lock recovers", () => InterruptedTests(root));
                 Run("vault + folder lock/unlock", () => FolderTests(root));
                 Run("guard blocks system paths", GuardTests);
+                Run("tracking + remove lock for good", () => TrackingTests(root));
             }
             finally
             {
@@ -184,8 +185,9 @@ namespace FileLocker.Tests
         private sealed class FakeUi : IUi
         {
             public byte[] Key;
+            public int Prompts, FreshPrompts;
             public readonly List<string> Errors = new List<string>();
-            public byte[] GetPrivateKey() => Key;
+            public byte[] GetPrivateKey(bool fresh) { Prompts++; if (fresh) FreshPrompts++; return Key; }
             public void Status(string text) { }
             public void Progress(long done, long total) { }
             public void Error(string path, string message) { Errors.Add(path + ": " + message); Console.WriteLine("    (ui error) " + path + ": " + message); }
@@ -251,6 +253,68 @@ namespace FileLocker.Tests
             Check(files.Keys.All(f => File.Exists(f + ".locked")), "cancelled PIN keeps everything locked");
             new Locker(ui).Unlock(dir);
             Unlocked.RemoveTree(dir);
+        }
+
+        private static void TrackingTests(string root)
+        {
+            if (!Vault.IsSetUp) Vault.Create("pin", "123456");
+            var key = Vault.Load().TryUnlock("123456");
+            var dir = Path.Combine(root, "Tracked Folder");
+            Directory.CreateDirectory(Path.Combine(dir, "inner"));
+            var inFolder = Path.Combine(dir, "inner", "secret.txt");
+            File.WriteAllText(inFolder, "inside");
+            var loose = Path.Combine(root, "loose.txt");
+            File.WriteAllText(loose, "loose");
+
+            var ui = new FakeUi { Key = key };
+            new Locker(ui).Lock(loose);
+            Check(Tracked.All().Contains(loose, StringComparer.OrdinalIgnoreCase), "locked file is listed");
+            Check(Tracked.StateOf(loose) == Tracked.State.Locked, "listed file shows Locked");
+            Check(Tracked.CurrentPath(loose) == loose + ".locked", "open target is the .locked file");
+
+            new Locker(ui).Lock(dir);
+            Check(Tracked.All().Contains(dir, StringComparer.OrdinalIgnoreCase), "locked folder is listed");
+            Check(!Tracked.All().Any(p => p.StartsWith(dir + "\\", StringComparison.OrdinalIgnoreCase)), "files inside a listed folder aren't listed separately");
+            Check(Tracked.StateOf(dir) == Tracked.State.Locked, "folder shows Locked");
+
+            // Opening a file inside the folder: folder shows partly open, file not listed on its own.
+            new Locker(ui).Unlock(inFolder + ".locked");
+            Check(Tracked.StateOf(dir) == Tracked.State.PartlyOpen, "folder shows partly open");
+            Check(!Tracked.All().Contains(inFolder, StringComparer.OrdinalIgnoreCase), "opened inner file still not listed separately");
+            new Locker(ui).LockAll();
+            Check(Tracked.StateOf(dir) == Tracked.State.Locked, "lock everything returns folder to Locked");
+
+            // Opening a listed file keeps it listed (as Open).
+            new Locker(ui).Unlock(loose + ".locked");
+            Check(Tracked.StateOf(loose) == Tracked.State.Open, "opened file shows Open and stays listed");
+
+            // Remove for good: cancelled PIN changes nothing.
+            var cancel = new FakeUi { Key = null };
+            new Locker(cancel).RemoveLock(dir);
+            Check(Tracked.StateOf(dir) == Tracked.State.Locked && Tracked.All().Contains(dir, StringComparer.OrdinalIgnoreCase), "cancelled PIN: folder stays locked and listed");
+
+            // Remove for good always asks for a fresh PIN.
+            var removeUi = new FakeUi { Key = key };
+            var remover = new Locker(removeUi);
+            remover.RemoveLock(dir);
+            remover.RemoveLock(loose);
+            Check(removeUi.FreshPrompts == 1, "remove asks for the PIN fresh (once per batch)");
+            Check(File.ReadAllText(inFolder) == "inside" && !Folder.IsMarked(dir), "removed folder is fully unlocked");
+            Check(File.ReadAllText(loose) == "loose", "removed file is unlocked");
+            bool Mine(string p) => string.Equals(p, dir, StringComparison.OrdinalIgnoreCase) || p.StartsWith(dir + "\\", StringComparison.OrdinalIgnoreCase) || string.Equals(p, loose, StringComparison.OrdinalIgnoreCase);
+            Check(!Tracked.All().Any(Mine), "removed items are off the list");
+            Check(!Unlocked.All().Any(Mine), "removed items won't be re-locked");
+            new Locker(ui).LockAll();
+            Check(!File.Exists(loose + ".locked") && File.Exists(loose), "lock everything leaves removed items alone");
+
+            // A moved/deleted item shows as missing and can be removed from the list.
+            var gone = Path.Combine(root, "gone.txt");
+            File.WriteAllText(gone, "x");
+            new Locker(ui).Lock(gone);
+            File.Delete(gone + ".locked");
+            Check(Tracked.StateOf(gone) == Tracked.State.Missing, "deleted item shows Can't find");
+            new Locker(new FakeUi { Key = key }).RemoveLock(gone);
+            Check(!Tracked.All().Contains(gone, StringComparer.OrdinalIgnoreCase), "missing item can be taken off the list");
         }
 
         private static void GuardTests()

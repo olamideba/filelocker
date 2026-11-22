@@ -35,6 +35,7 @@ LicenseFile=..\LICENSE
 Source: "..\out\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs
 Source: "..\assets\locked.ico"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\assets\app.ico"; DestDir: "{app}"; Flags: ignoreversion
+Source: "..\assets\unlocked.ico"; DestDir: "{app}"; Flags: ignoreversion
 
 [Icons]
 Name: "{autoprograms}\{#AppName}"; Filename: "{app}\{#AppExe}"
@@ -75,7 +76,7 @@ Root: HKA; Subkey: "Software\Classes\Directory\Background\shell\FileLocker.LockA
 Root: HKA; Subkey: "Software\Classes\Directory\Background\shell\FileLocker.LockAll\command"; ValueType: string; ValueData: """{#Cmd}"" lockall"
 
 [Run]
-Filename: "{app}\{#AppExe}"; Parameters: "setup"; Description: "Set up FileLocker now (choose your PIN or password)"; Flags: postinstall nowait skipifsilent
+Filename: "{app}\{#AppExe}"; Parameters: "setup"; Description: "Open FileLocker"; Flags: postinstall nowait skipifsilent
 
 [Code]
 function InitializeSetup(): Boolean;

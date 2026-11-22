@@ -90,8 +90,17 @@ namespace FileLocker
                 case "unlock":
                     if (!_cancelled) locker.Unlock(r.Path);
                     break;
+                case "remove":
+                    if (!_cancelled) locker.RemoveLock(r.Path);
+                    break;
                 case "open":
                     if (_cancelled) break;
+                    if (Directory.Exists(r.Path))
+                    {
+                        locker.Unlock(r.Path);
+                        if (!_cancelled) Process.Start("explorer.exe", "\"" + r.Path + "\"");
+                        break;
+                    }
                     var p = locker.Unlock(r.Path);
                     if (p != null && File.Exists(p))
                     {
@@ -118,16 +127,19 @@ namespace FileLocker
 
         // ---------------------------------------------------------------- IUi
 
-        public byte[] GetPrivateKey()
+        public byte[] GetPrivateKey(bool fresh)
         {
             if (_cancelled) return null;
-            var cached = Vault.SessionGet();
-            if (cached != null) return cached;
+            if (!fresh)
+            {
+                var cached = Vault.SessionGet();
+                if (cached != null) return cached;
+            }
             byte[] key = null;
             Invoke(new Action(() =>
             {
-                var what = _current?.Path != null ? Path.GetFileName(_current.Path) : "your files";
-                key = PinDialog.Ask(this, what);
+                var name = _current?.Path != null ? Path.GetFileName(Locker.StripExtension(_current.Path)) : "your files";
+                key = PinDialog.Ask(this, fresh ? "to remove the lock from \"" + name + "\" for good" : "to unlock " + name);
             }));
             if (key == null) _cancelled = true;
             else Vault.SessionSet(key);

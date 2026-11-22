@@ -81,15 +81,17 @@ namespace FileLocker
 
         public static string HowTo =>
             "How to use FileLocker\n\n" +
-            "LOCK: right-click a file or folder and choose \"Lock with FileLocker\".\n" +
-            "On Windows 11, click \"Show more options\" first (or hold Shift while right-clicking).\n\n" +
-            "OPEN A LOCKED FILE: double-click it (it has a padlock icon and ends in .locked). " +
-            "Type your PIN and it opens.\n\n" +
-            "UNLOCK A WHOLE FOLDER: right-click it and choose \"Unlock folder with FileLocker\".\n\n" +
-            "LOCK AGAIN: things you unlock stay unlocked until you lock them again. " +
-            "Right-click an empty spot on the desktop or in any folder and choose " +
-            "\"Lock everything I unlocked\", or use the button in the FileLocker window.\n\n" +
-            "After you type your PIN, FileLocker remembers it for 5 minutes so you can open several files in a row.";
+            "LOCK SOMETHING\n" +
+            "In the FileLocker window, click \"Lock a file…\" or \"Lock a folder…\".\n" +
+            "Or right-click the file or folder and choose \"Lock with FileLocker\" " +
+            "(on Windows 11, click \"Show more options\" first).\n\n" +
+            "OPEN SOMETHING LOCKED\n" +
+            "Double-click it, in the FileLocker window or in your folders, and type your PIN.\n\n" +
+            "LOCK IT AGAIN WHEN YOU'RE DONE\n" +
+            "Things you open stay open until you lock them again. Click \"Lock everything now\".\n\n" +
+            "REMOVE A LOCK FOR GOOD\n" +
+            "In the FileLocker window, select it and click \"Remove lock…\". You'll need your PIN.\n\n" +
+            "After you type your PIN, FileLocker remembers it for 5 minutes, so you can open several things in a row.";
     }
 
     /// <summary>"PIN or password" picker with an entry box and a confirmation box.</summary>
@@ -155,9 +157,10 @@ namespace FileLocker
         private readonly Button _ok;
         private int _fails;
 
-        public static byte[] Ask(IWin32Window owner, string what)
+        /// <param name="purpose">Shown under the title, e.g. "to unlock report.docx".</param>
+        public static byte[] Ask(IWin32Window owner, string purpose)
         {
-            using (var d = new PinDialog(Vault.Load(), what))
+            using (var d = new PinDialog(Vault.Load(), purpose))
                 return d.ShowDialog(owner) == DialogResult.OK ? d.Result : null;
         }
 
@@ -180,7 +183,7 @@ namespace FileLocker
             col.Controls.AddRange(new Control[]
             {
                 Ui.Title(pin ? "Enter your PIN" : "Enter your password"),
-                Ui.Text("to unlock " + what),
+                Ui.Text(what),
                 _box, _err, Ui.Row(_ok, cancel), forgot,
             });
             Controls.Add(col);
@@ -364,11 +367,7 @@ namespace FileLocker
             var done = Ui.Btn("Finish");
             done.Enabled = false;
             check.CheckedChanged += (s, e) => done.Enabled = check.Checked;
-            done.Click += (s, e) =>
-            {
-                MessageBox.Show(this, Ui.HowTo, "FileLocker is ready", MessageBoxButtons.OK, MessageBoxIcon.Information);
-                Close();
-            };
+            done.Click += (s, e) => Close(); // the main FileLocker window opens next
             _col.Controls.AddRange(new Control[]
             {
                 Ui.Title("Save your recovery key"),
@@ -378,67 +377,6 @@ namespace FileLocker
             });
             _col.ResumeLayout();
             AcceptButton = null;
-        }
-    }
-
-    /// <summary>The window you get from the Start menu.</summary>
-    internal sealed class MainForm : Form
-    {
-        private readonly Label _status;
-        private readonly Button _lockAll;
-
-        public MainForm()
-        {
-            Ui.Setup(this, "FileLocker");
-            var col = Ui.Column();
-            _status = Ui.Text("");
-            _lockAll = Ui.Btn("Lock everything I unlocked");
-            _lockAll.Click += (s, e) => LockAll();
-            var change = Ui.Btn("Change PIN or password");
-            change.Click += (s, e) => ChangeSecret();
-            var recover = Ui.Btn("Forgot it? Use recovery key");
-            recover.Click += (s, e) => { using (var d = new RecoveryDialog(Vault.Load())) d.ShowDialog(this); };
-            var help = Ui.Btn("How to use");
-            help.Click += (s, e) => MessageBox.Show(this, Ui.HowTo, "FileLocker", MessageBoxButtons.OK, MessageBoxIcon.Information);
-            var site = new LinkLabel { Text = "Open source: " + Program.RepoUrl, AutoSize = true, Margin = new Padding(0, 14, 0, 0) };
-            site.LinkClicked += (s, e) => { try { Process.Start(Program.RepoUrl); } catch { } };
-            foreach (var b in new[] { _lockAll, change, recover, help }) { b.Margin = new Padding(0, 0, 0, 8); b.MinimumSize = new Size(300, 34); }
-            col.Controls.AddRange(new Control[]
-            {
-                Ui.Title("FileLocker"),
-                Ui.Text("Right-click any file or folder and choose \"Lock with FileLocker\". " +
-                        "On Windows 11, click \"Show more options\" first."),
-                _status, _lockAll, change, recover, help, site,
-            });
-            Controls.Add(col);
-            Activated += (s, e) => RefreshStatus();
-        }
-
-        private void RefreshStatus()
-        {
-            int n = Unlocked.All().Count;
-            _status.Text = n == 0 ? "Everything you've locked is locked." :
-                n == 1 ? "1 item is unlocked right now." : n + " items are unlocked right now.";
-            _lockAll.Enabled = n > 0;
-        }
-
-        private void LockAll()
-        {
-            try
-            {
-                var p = Process.Start(Application.ExecutablePath, "lockall");
-                if (p == null) return;
-                p.EnableRaisingEvents = true;
-                p.Exited += (s, e) => { try { BeginInvoke(new Action(RefreshStatus)); } catch { } };
-            }
-            catch (Exception ex) { MessageBox.Show(this, ex.Message, "FileLocker"); }
-        }
-
-        private void ChangeSecret()
-        {
-            var key = PinDialog.Ask(this, "change it");
-            if (key == null) return;
-            using (var d = new ChangeSecretDialog(Vault.Load(), key)) d.ShowDialog(this);
         }
     }
 }

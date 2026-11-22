@@ -11,8 +11,12 @@ namespace FileLocker
     /// <summary>What the locking logic needs from the user interface.</summary>
     internal interface IUi
     {
-        /// <summary>Ask for the PIN (or reuse the session). Returns the private key blob, or null if cancelled.</summary>
-        byte[] GetPrivateKey();
+        /// <summary>
+        /// Ask for the PIN and return the private key blob, or null if cancelled.
+        /// When <paramref name="fresh"/> is false a PIN typed in the last few minutes may be reused;
+        /// when true the PIN must be typed now (used for removing a lock permanently).
+        /// </summary>
+        byte[] GetPrivateKey(bool fresh);
         void Status(string text);
         void Progress(long done, long total);
         void Error(string path, string message);
@@ -41,15 +45,23 @@ namespace FileLocker
         }
 
         /// <summary>Returns false if the user cancelled the PIN prompt.</summary>
-        private bool EnsurePrivate()
+        private bool _freshPin;
+
+        private bool EnsurePrivate(bool fresh = false)
         {
-            if (_private != null) return true;
-            var blob = _ui.GetPrivateKey();
+            if (_private != null && (!fresh || _freshPin)) return true;
+            var blob = _ui.GetPrivateKey(fresh);
             if (blob == null) return false;
             _private = new RSACryptoServiceProvider { PersistKeyInCsp = false };
             _private.ImportCspBlob(blob);
+            if (fresh) _freshPin = true;
             return true;
         }
+
+        public static string StripExtension(string path) =>
+            path.EndsWith(LockedFile.Extension, StringComparison.OrdinalIgnoreCase)
+                ? path.Substring(0, path.Length - LockedFile.Extension.Length)
+                : path;
 
         // ------------------------------------------------------------------ lock
 
@@ -57,7 +69,7 @@ namespace FileLocker
         {
             path = Guard.Normalize(path);
             if (Directory.Exists(path)) LockFolder(path);
-            else if (File.Exists(path)) { BeginWork(new[] { path }); LockFileAt(path); }
+            else if (File.Exists(path)) { BeginWork(new[] { path }); if (LockFileAt(path) != null) Tracked.Add(StripExtension(path)); }
             else _ui.Error(path, "This file or folder no longer exists.");
         }
 
@@ -98,6 +110,7 @@ namespace FileLocker
             foreach (var f in files) LockFileAt(f);
             Folder.Mark(dir);
             Unlocked.RemoveTree(dir);
+            Tracked.AddFolder(dir);
             Shell.Refresh(dir);
         }
 
@@ -118,7 +131,9 @@ namespace FileLocker
             }
             if (!EnsurePrivate()) return null;
             BeginWork(new[] { path });
-            return UnlockFileAt(path);
+            var result = UnlockFileAt(path);
+            if (result != null) Tracked.Add(StripExtension(path));
+            return result;
         }
 
         private string UnlockFileAt(string path)
@@ -141,18 +156,57 @@ namespace FileLocker
             catch (Exception ex) { _ui.Error(path, ex.Message); return null; }
         }
 
-        private void UnlockFolder(string dir)
+        /// <summary>Returns true if every file in the folder is now unlocked.</summary>
+        private bool UnlockFolder(string dir, bool permanent = false)
         {
             _ui.Status("Looking inside " + Path.GetFileName(dir) + "…");
             var files = EnumerateFiles(dir).Where(f => LockedFile.IsLocked(f)).ToList();
-            if (files.Count > 0 && !EnsurePrivate()) return;
+            if (files.Count > 0 && !EnsurePrivate(permanent)) return false;
             BeginWork(files);
             int failed = 0;
             foreach (var f in files) if (UnlockFileAt(f) == null) failed++;
             if (failed == 0) Folder.Unmark(dir);
             Unlocked.RemoveTree(dir);
-            Unlocked.Add(dir);
+            if (!permanent)
+            {
+                Unlocked.Add(dir);
+                Tracked.AddFolder(dir);
+            }
             Shell.Refresh(dir);
+            return failed == 0;
+        }
+
+        // ------------------------------------------------------------------ remove for good
+
+        /// <summary>
+        /// Unlock a file or folder and stop protecting it, so "Lock everything" won't lock it again.
+        /// Always asks for the PIN, even if it was typed a minute ago.
+        /// </summary>
+        public void RemoveLock(string path)
+        {
+            path = Guard.Normalize(StripExtension(path));
+            if (!EnsurePrivate(fresh: true)) return;
+
+            if (Directory.Exists(path))
+            {
+                if (!UnlockFolder(path, permanent: true)) return; // keep it listed if something failed
+                Tracked.RemoveTree(path);
+                return;
+            }
+
+            var lockedPath = File.Exists(path + LockedFile.Extension) ? path + LockedFile.Extension
+                           : File.Exists(path) && LockedFile.IsLocked(path) ? path
+                           : null;
+            if (lockedPath != null)
+            {
+                BeginWork(new[] { lockedPath });
+                var result = UnlockFileAt(lockedPath);
+                if (result == null) return;
+                Unlocked.Remove(result);
+            }
+            Unlocked.Remove(path);
+            Tracked.Remove(path);
+            _ui.Status("The lock was removed from " + Path.GetFileName(path) + ".");
         }
 
         // ------------------------------------------------------------------ lock all
@@ -166,7 +220,7 @@ namespace FileLocker
             foreach (var item in items)
             {
                 if (Directory.Exists(item)) LockFolder(item);
-                else if (File.Exists(item)) { BeginWork(new[] { item }); LockFileAt(item); }
+                else if (File.Exists(item)) { BeginWork(new[] { item }); if (LockFileAt(item) != null) Tracked.Add(item); }
                 else Unlocked.Remove(item);
             }
         }
@@ -262,6 +316,16 @@ namespace FileLocker
             catch { /* the icon is cosmetic; the files themselves are locked */ }
         }
 
+        public static bool IsMarked(string dir)
+        {
+            try
+            {
+                var ini = Path.Combine(dir, "desktop.ini");
+                return File.Exists(ini) && File.ReadAllText(ini).Contains(Section);
+            }
+            catch { return false; }
+        }
+
         public static void Unmark(string dir)
         {
             try
@@ -287,40 +351,115 @@ namespace FileLocker
         }
     }
 
-    /// <summary>The list of things unlocked with FileLocker, so "Lock everything" can re-lock them.</summary>
-    internal static class Unlocked
+    /// <summary>A list of paths stored one per line in the FileLocker data folder.</summary>
+    internal sealed class PathList
     {
-        private static string ListPath => Path.Combine(Vault.Dir, "unlocked.txt");
+        private readonly string _file;
+        public PathList(string fileName) { _file = fileName; }
+        public string FilePath => Path.Combine(Vault.Dir, _file);
 
-        public static List<string> All()
+        public List<string> All()
         {
-            try { return File.Exists(ListPath) ? File.ReadAllLines(ListPath).Where(l => l.Trim().Length > 0).Distinct(StringComparer.OrdinalIgnoreCase).ToList() : new List<string>(); }
+            try
+            {
+                return File.Exists(FilePath)
+                    ? File.ReadAllLines(FilePath).Select(l => l.Trim()).Where(l => l.Length > 0).Distinct(StringComparer.OrdinalIgnoreCase).ToList()
+                    : new List<string>();
+            }
             catch { return new List<string>(); }
         }
 
-        private static void Save(IEnumerable<string> items)
+        public void Save(IEnumerable<string> items)
         {
-            try { Directory.CreateDirectory(Vault.Dir); File.WriteAllLines(ListPath, items); } catch { }
+            try { Directory.CreateDirectory(Vault.Dir); File.WriteAllLines(FilePath, items); } catch { }
         }
 
-        public static void Add(string path)
+        public bool Contains(string path) => All().Contains(path, StringComparer.OrdinalIgnoreCase);
+
+        public void Add(string path)
         {
             var all = All();
             if (!all.Contains(path, StringComparer.OrdinalIgnoreCase)) { all.Add(path); Save(all); }
         }
 
-        public static void Remove(string path)
+        public void Remove(string path)
         {
             var all = All();
             if (all.RemoveAll(p => string.Equals(p, path, StringComparison.OrdinalIgnoreCase)) > 0) Save(all);
         }
 
-        public static void RemoveTree(string dir)
+        public static bool IsUnder(string path, string dir) =>
+            path.StartsWith(dir.TrimEnd('\\') + "\\", StringComparison.OrdinalIgnoreCase);
+
+        /// <summary>Removes the folder itself and everything inside it.</summary>
+        public void RemoveTree(string dir)
         {
-            var prefix = dir.TrimEnd('\\') + "\\";
             var all = All();
-            if (all.RemoveAll(p => string.Equals(p, dir, StringComparison.OrdinalIgnoreCase) || p.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)) > 0) Save(all);
+            if (all.RemoveAll(p => string.Equals(p, dir, StringComparison.OrdinalIgnoreCase) || IsUnder(p, dir)) > 0) Save(all);
         }
+    }
+
+    /// <summary>Things unlocked with FileLocker, so "Lock everything" can lock them again.</summary>
+    internal static class Unlocked
+    {
+        private static readonly PathList List = new PathList("unlocked.txt");
+        public static string FilePath => List.FilePath;
+        public static List<string> All() => List.All();
+        public static void Add(string path) => List.Add(path);
+        public static void Remove(string path) => List.Remove(path);
+        public static void RemoveTree(string dir) => List.RemoveTree(dir);
+        public static bool AnyUnder(string dir) => All().Any(p => string.Equals(p, dir, StringComparison.OrdinalIgnoreCase) || PathList.IsUnder(p, dir));
+    }
+
+    /// <summary>
+    /// Everything the user has locked, shown in the FileLocker window. Items are stored by their
+    /// normal name (without ".locked"), so an item keeps its identity whether it's locked or open.
+    /// A file inside a tracked folder isn't listed separately.
+    /// </summary>
+    internal static class Tracked
+    {
+        public enum State { Locked, Open, PartlyOpen, Missing }
+
+        private static readonly PathList List = new PathList("locked-items.txt");
+        public static string FilePath => List.FilePath;
+        public static List<string> All() => List.All();
+        public static void Remove(string path) => List.Remove(path);
+        public static void RemoveTree(string dir) => List.RemoveTree(dir);
+
+        public static void Add(string path)
+        {
+            var all = All();
+            if (all.Any(p => string.Equals(p, path, StringComparison.OrdinalIgnoreCase) || PathList.IsUnder(path, p))) return;
+            all.Add(path);
+            List.Save(all);
+        }
+
+        public static void AddFolder(string dir)
+        {
+            var all = All();
+            if (all.Any(p => PathList.IsUnder(dir, p))) return; // already inside a tracked folder
+            all.RemoveAll(p => PathList.IsUnder(p, dir));
+            if (!all.Contains(dir, StringComparer.OrdinalIgnoreCase)) all.Add(dir);
+            List.Save(all);
+        }
+
+        public static bool IsFolder(string path) => Directory.Exists(path);
+
+        public static State StateOf(string path)
+        {
+            if (Directory.Exists(path))
+            {
+                if (!Folder.IsMarked(path)) return State.Open;
+                return Unlocked.AnyUnder(path) ? State.PartlyOpen : State.Locked;
+            }
+            if (File.Exists(path + LockedFile.Extension)) return State.Locked;
+            if (File.Exists(path)) return LockedFile.IsLocked(path) ? State.Locked : State.Open;
+            return State.Missing;
+        }
+
+        /// <summary>The path to hand to "open": the .locked file if the file is locked.</summary>
+        public static string CurrentPath(string path) =>
+            !Directory.Exists(path) && File.Exists(path + LockedFile.Extension) ? path + LockedFile.Extension : path;
     }
 
     /// <summary>Tells Explorer to redraw icons.</summary>
