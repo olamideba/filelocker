@@ -87,19 +87,21 @@ namespace FileLocker
             "(on Windows 11, click \"Show more options\" first).\n\n" +
             "OPEN SOMETHING LOCKED\n" +
             "Double-click it, in the FileLocker window or in your folders, and type your PIN.\n\n" +
-            "LOCK IT AGAIN WHEN YOU'RE DONE\n" +
-            "Things you open stay open until you lock them again. Click \"Lock everything now\".\n\n" +
+            "IT LOCKS ITSELF AGAIN\n" +
+            "When you close the program showing the file (or the folder window), FileLocker locks it again by itself " +
+            "a few seconds later. To lock everything right away, click \"Lock everything now\".\n\n" +
             "REMOVE A LOCK FOR GOOD\n" +
             "In the FileLocker window, select it and click \"Remove lock…\". You'll need your PIN.\n\n" +
             "FileLocker asks for your PIN every time something locked is opened. It never remembers it.";
     }
 
-    /// <summary>"PIN or password" picker with an entry box and a confirmation box.</summary>
+    /// <summary>"PIN or password" picker. A PIN is typed into 6 boxes; a password into normal text boxes.</summary>
     internal sealed class SecretPanel : FlowLayoutPanel
     {
         private readonly RadioButton _pin, _pwd;
         private readonly TextBox _a, _b;
-        private readonly Label _la, _lb;
+        private readonly PinBox _pa, _pb;
+        private readonly Label _la, _lb, _lpa, _lpb;
 
         public SecretPanel(string currentKind = "pin")
         {
@@ -108,41 +110,50 @@ namespace FileLocker
             AutoSize = true;
             AutoSizeMode = AutoSizeMode.GrowAndShrink;
             Margin = new Padding(0);
-            _pin = new RadioButton { Text = "PIN (numbers only, at least 6 digits)", AutoSize = true, Checked = currentKind == "pin" };
-            _pwd = new RadioButton { Text = "Password (at least 8 characters)", AutoSize = true, Checked = currentKind != "pin", Margin = new Padding(3, 0, 3, 10) };
-            _la = new Label { AutoSize = true, Margin = new Padding(0, 0, 0, 2) };
-            _lb = new Label { AutoSize = true, Margin = new Padding(0, 0, 0, 2) };
+            _pin = new RadioButton { Text = "PIN: 6 digits (easiest)", AutoSize = true, Checked = currentKind == "pin" };
+            _pwd = new RadioButton { Text = "Password: 8 or more characters", AutoSize = true, Checked = currentKind != "pin", Margin = new Padding(3, 0, 3, 12) };
+
+            _lpa = new Label { AutoSize = true, Text = "Choose a 6-digit PIN", Margin = new Padding(0, 0, 0, 4) };
+            _lpb = new Label { AutoSize = true, Text = "Type the same 6 digits again", Margin = new Padding(0, 4, 0, 4) };
+            _pa = new PinBox();
+            _pb = new PinBox();
+            _pa.Completed += (s, e) => _pb.Focus();
+
+            _la = new Label { AutoSize = true, Text = "New password", Margin = new Padding(0, 0, 0, 2) };
+            _lb = new Label { AutoSize = true, Text = "Type the password again", Margin = new Padding(0, 0, 0, 2) };
             _a = Ui.SecretBox();
             _b = Ui.SecretBox();
-            _pin.CheckedChanged += (s, e) => Relabel();
-            _a.KeyPress += Digits;
-            _b.KeyPress += Digits;
-            Controls.AddRange(new Control[] { _pin, _pwd, _la, _a, _lb, _b });
-            Relabel();
+
+            _pin.CheckedChanged += (s, e) => Switch();
+            Controls.AddRange(new Control[] { _pin, _pwd, _lpa, _pa, _lpb, _pb, _la, _a, _lb, _b });
+            Switch();
         }
 
-        private void Digits(object sender, KeyPressEventArgs e)
+        private void Switch()
         {
-            if (_pin.Checked && !char.IsControl(e.KeyChar) && !char.IsDigit(e.KeyChar)) e.Handled = true;
-        }
-
-        private void Relabel()
-        {
-            _la.Text = _pin.Checked ? "New PIN" : "New password";
-            _lb.Text = _pin.Checked ? "Type the PIN again" : "Type the password again";
-            _a.Clear(); _b.Clear();
+            bool pin = _pin.Checked;
+            foreach (Control c in new Control[] { _lpa, _pa, _lpb, _pb }) c.Visible = pin;
+            foreach (Control c in new Control[] { _la, _a, _lb, _b }) c.Visible = !pin;
+            _a.Clear(); _b.Clear(); _pa.Clear(); _pb.Clear();
+            FocusFirst();
         }
 
         public string Kind => _pin.Checked ? "pin" : "password";
-        public string Secret => _a.Text;
-        public void FocusFirst() => _a.Focus();
+        public string Secret => _pin.Checked ? _pa.Value : _a.Text;
+        public void FocusFirst() { if (_pin.Checked) _pa.Focus(); else _a.Focus(); }
 
         /// <summary>Returns an error message, or null if the entries are fine.</summary>
         public string Check()
         {
+            if (_pin.Checked)
+            {
+                if (_pa.Value.Length < 6) { _pa.Focus(); return "Fill in all 6 boxes."; }
+                if (_pb.Value != _pa.Value) { _pb.Clear(); _pb.Focus(); return "The two PINs don't match. Type it again in the second row."; }
+                return null;
+            }
             var err = Vault.ValidateSecret(Kind, _a.Text);
             if (err != null) return err;
-            if (_a.Text != _b.Text) return Kind == "pin" ? "The two PINs don't match." : "The two passwords don't match.";
+            if (_a.Text != _b.Text) return "The two passwords don't match.";
             return null;
         }
     }
@@ -152,6 +163,8 @@ namespace FileLocker
     {
         public byte[] Result;
         private readonly Vault _v;
+        private readonly bool _isPin;
+        private readonly PinBox _pinBox;
         private readonly TextBox _box;
         private readonly Label _err;
         private readonly Button _ok;
@@ -169,10 +182,18 @@ namespace FileLocker
             _v = v;
             Ui.Setup(this, "FileLocker");
             TopMost = true;
-            bool pin = v.Kind == "pin";
+            _isPin = v.Kind == "pin";
             var col = Ui.Column();
-            _box = Ui.SecretBox();
-            if (pin) _box.KeyPress += (s, e) => { if (!char.IsControl(e.KeyChar) && !char.IsDigit(e.KeyChar)) e.Handled = true; };
+            int digits = v.PinLength > 0 ? v.PinLength : 6;
+            Control entry;
+            if (_isPin)
+            {
+                // Known length: check as soon as the last box is filled. Unknown (older setups): allow longer, press Unlock.
+                _pinBox = new PinBox(digits, v.PinLength > 0 ? v.PinLength : 12);
+                if (v.PinLength > 0) _pinBox.Completed += (s, e) => BeginInvoke(new Action(TryOk));
+                entry = _pinBox;
+            }
+            else entry = _box = Ui.SecretBox();
             _err = Ui.ErrorLabel();
             _ok = Ui.Btn("Unlock");
             var cancel = Ui.Btn("Cancel");
@@ -182,43 +203,63 @@ namespace FileLocker
             forgot.LinkClicked += (s, e) => Forgot();
             col.Controls.AddRange(new Control[]
             {
-                Ui.Title(pin ? "Enter your PIN" : "Enter your password"),
+                Ui.Title(_isPin ? "Enter your " + digits + "-digit PIN" : "Enter your password"),
                 Ui.Text(what),
-                _box, _err, Ui.Row(_ok, cancel), forgot,
+                entry, _err, Ui.Row(_ok, cancel), forgot,
             });
             Controls.Add(col);
             AcceptButton = _ok;
             CancelButton = cancel;
-            Shown += (s, e) => { Activate(); _box.Focus(); };
+            Shown += (s, e) => { Activate(); entry.Focus(); };
+        }
+
+        private string Entered => _isPin ? _pinBox.Value : _box.Text;
+
+        private void ClearEntry()
+        {
+            if (_isPin) _pinBox.Clear(); else _box.Clear();
         }
 
         private void TryOk()
         {
-            if (_box.Text.Length == 0) return;
+            var secret = Entered;
+            if (secret.Length == 0 || !_ok.Enabled) return;
             Cursor = Cursors.WaitCursor;
             _ok.Enabled = false;
             _err.Text = "Checking…";
             _err.ForeColor = SystemColors.GrayText;
             Refresh();
-            var key = _v.TryUnlock(_box.Text);
+            var key = _v.TryUnlock(secret);
             Cursor = Cursors.Default;
             _err.ForeColor = Color.Firebrick;
-            if (key != null) { Result = key; DialogResult = DialogResult.OK; return; }
+            if (key != null)
+            {
+                if (_isPin && _v.PinLength == 0) try { _v.RememberPinLength(secret.Length); } catch { }
+                Result = key;
+                DialogResult = DialogResult.OK;
+                return;
+            }
 
             _fails++;
-            _box.Clear();
-            _box.Focus();
+            ClearEntry();
             if (_fails % 5 == 0)
             {
                 _err.Text = "Too many wrong tries. Wait 30 seconds.";
+                if (_isPin) _pinBox.Enabled = false; else _box.Enabled = false;
                 var t = new Timer { Interval = 30000 };
-                t.Tick += (s, e) => { t.Stop(); t.Dispose(); _ok.Enabled = true; _err.Text = ""; };
+                t.Tick += (s, e) =>
+                {
+                    t.Stop(); t.Dispose();
+                    _ok.Enabled = true; _err.Text = "";
+                    if (_isPin) { _pinBox.Enabled = true; _pinBox.Focus(); } else { _box.Enabled = true; _box.Focus(); }
+                };
                 t.Start();
             }
             else
             {
-                _err.Text = _v.Kind == "pin" ? "Wrong PIN. Try again." : "Wrong password. Try again.";
+                _err.Text = _isPin ? "Wrong PIN. Try again." : "Wrong password. Try again.";
                 _ok.Enabled = true;
+                if (_isPin) _pinBox.Focus(); else _box.Focus();
             }
         }
 

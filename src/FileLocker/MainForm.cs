@@ -162,7 +162,7 @@ namespace FileLocker
         private static string Stamp()
         {
             string T(string p) { try { return File.Exists(p) ? File.GetLastWriteTimeUtc(p).Ticks.ToString() : "-"; } catch { return "?"; } }
-            return T(Tracked.FilePath) + "|" + T(Unlocked.FilePath);
+            return T(Tracked.FilePath) + "|" + T(Unlocked.FilePath) + "|" + T(AutoRelock.FilePath);
         }
 
         private sealed class Row
@@ -177,6 +177,7 @@ namespace FileLocker
             _stamp = Stamp();
             var selected = new HashSet<string>(SelectedRows().Select(r => r.Path), StringComparer.OrdinalIgnoreCase);
             int locked = 0, open = 0;
+            var watched = new HashSet<string>(AutoRelock.All().Select(e => e.Path), StringComparer.OrdinalIgnoreCase);
             _list.BeginUpdate();
             _list.Items.Clear();
             foreach (var path in Tracked.All().OrderBy(p => System.IO.Path.GetFileName(p), StringComparer.CurrentCultureIgnoreCase))
@@ -188,8 +189,10 @@ namespace FileLocker
                 switch (row.State)
                 {
                     case Tracked.State.Locked: status = "Locked " + kind; icon = IconLocked; locked++; break;
-                    case Tracked.State.PartlyOpen: status = "Some files open. Lock again when done"; icon = IconOpen; open++; break;
-                    case Tracked.State.Open: status = "Open. Lock again when done"; icon = IconOpen; open++; break;
+                    case Tracked.State.PartlyOpen: status = "Some files open. They lock again when closed"; icon = IconOpen; open++; break;
+                    case Tracked.State.Open:
+                        status = watched.Contains(path) ? "Open. Locks again when you close it" : "Open. Click \"Lock again\" when done";
+                        icon = IconOpen; open++; break;
                     default: status = "Can't find it (moved or deleted?)"; icon = IconMissing; break;
                 }
                 var item = new ListViewItem(System.IO.Path.GetFileName(path)) { Tag = row, ImageIndex = icon };

@@ -50,7 +50,7 @@ Root: HKA; Subkey: "Software\Classes\FileLocker.LockedFile\shell"; ValueType: st
 Root: HKA; Subkey: "Software\Classes\FileLocker.LockedFile\shell\open"; ValueType: string; ValueData: "Unlock and open"
 Root: HKA; Subkey: "Software\Classes\FileLocker.LockedFile\shell\open"; ValueType: string; ValueName: "Icon"; ValueData: "{app}\{#AppExe}"
 Root: HKA; Subkey: "Software\Classes\FileLocker.LockedFile\shell\open\command"; ValueType: string; ValueData: """{#Cmd}"" open ""%1"""
-Root: HKA; Subkey: "Software\Classes\FileLocker.LockedFile\shell\unlock"; ValueType: string; ValueData: "Unlock with FileLocker"
+Root: HKA; Subkey: "Software\Classes\FileLocker.LockedFile\shell\unlock"; ValueType: string; ValueData: "Unlock and keep unlocked (FileLocker)"
 Root: HKA; Subkey: "Software\Classes\FileLocker.LockedFile\shell\unlock"; ValueType: string; ValueName: "MultiSelectModel"; ValueData: "Player"
 Root: HKA; Subkey: "Software\Classes\FileLocker.LockedFile\shell\unlock\command"; ValueType: string; ValueData: """{#Cmd}"" unlock ""%1"""
 
@@ -65,15 +65,18 @@ Root: HKA; Subkey: "Software\Classes\Directory\shell\FileLocker.Lock"; ValueType
 Root: HKA; Subkey: "Software\Classes\Directory\shell\FileLocker.Lock"; ValueType: string; ValueName: "Icon"; ValueData: "{app}\{#AppExe}"
 Root: HKA; Subkey: "Software\Classes\Directory\shell\FileLocker.Lock"; ValueType: string; ValueName: "MultiSelectModel"; ValueData: "Player"
 Root: HKA; Subkey: "Software\Classes\Directory\shell\FileLocker.Lock\command"; ValueType: string; ValueData: """{#Cmd}"" lock ""%1"""
-Root: HKA; Subkey: "Software\Classes\Directory\shell\FileLocker.Unlock"; ValueType: string; ValueData: "Unlock folder with FileLocker"; Flags: uninsdeletekey
+Root: HKA; Subkey: "Software\Classes\Directory\shell\FileLocker.Unlock"; ValueType: string; ValueData: "Unlock and open folder (FileLocker)"; Flags: uninsdeletekey
 Root: HKA; Subkey: "Software\Classes\Directory\shell\FileLocker.Unlock"; ValueType: string; ValueName: "Icon"; ValueData: "{app}\locked.ico"
 Root: HKA; Subkey: "Software\Classes\Directory\shell\FileLocker.Unlock"; ValueType: string; ValueName: "MultiSelectModel"; ValueData: "Player"
-Root: HKA; Subkey: "Software\Classes\Directory\shell\FileLocker.Unlock\command"; ValueType: string; ValueData: """{#Cmd}"" unlock ""%1"""
+Root: HKA; Subkey: "Software\Classes\Directory\shell\FileLocker.Unlock\command"; ValueType: string; ValueData: """{#Cmd}"" open ""%1"""
 
 ; Right-click empty space in a folder or on the desktop: Lock everything I unlocked.
 Root: HKA; Subkey: "Software\Classes\Directory\Background\shell\FileLocker.LockAll"; ValueType: string; ValueData: "Lock everything I unlocked (FileLocker)"; Flags: uninsdeletekey
 Root: HKA; Subkey: "Software\Classes\Directory\Background\shell\FileLocker.LockAll"; ValueType: string; ValueName: "Icon"; ValueData: "{app}\locked.ico"
 Root: HKA; Subkey: "Software\Classes\Directory\Background\shell\FileLocker.LockAll\command"; ValueType: string; ValueData: """{#Cmd}"" lockall"
+
+; At sign-in, finish locking anything that was still open when the PC was shut down.
+Root: HKA; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: string; ValueName: "FileLockerWatch"; ValueData: """{#Cmd}"" watch"; Flags: uninsdeletevalue
 
 [Run]
 Filename: "{app}\{#AppExe}"; Parameters: "setup"; Description: "Open FileLocker"; Flags: postinstall nowait skipifsilent

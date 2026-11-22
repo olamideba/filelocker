@@ -97,15 +97,26 @@ namespace FileLocker
                     if (_cancelled) break;
                     if (Directory.Exists(r.Path))
                     {
-                        locker.Unlock(r.Path);
-                        if (!_cancelled) Process.Start("explorer.exe", "\"" + r.Path + "\"");
+                        var dir = Guard.Normalize(r.Path);
+                        locker.Unlock(dir);
+                        if (_cancelled) break;
+                        AutoRelock.Add(dir, 0); // locks again once its Explorer window is closed
+                        Program.EnsureWatcher();
+                        Process.Start("explorer.exe", "\"" + dir + "\"");
                         break;
                     }
                     var p = locker.Unlock(r.Path);
                     if (p != null && File.Exists(p))
                     {
-                        try { Process.Start(new ProcessStartInfo(p) { UseShellExecute = true }); }
+                        int pid = 0;
+                        try
+                        {
+                            using (var proc = Process.Start(new ProcessStartInfo(p) { UseShellExecute = true }))
+                                if (proc != null) try { pid = proc.Id; } catch { }
+                        }
                         catch (Exception ex) { Error(p, "Unlocked, but Windows couldn't open it: " + ex.Message); }
+                        AutoRelock.Add(p, pid); // locks again once the program showing it is closed
+                        Program.EnsureWatcher();
                     }
                     break;
                 case "lockall":

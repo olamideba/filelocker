@@ -26,6 +26,7 @@ namespace FileLocker
 
         public string Kind = "pin"; // "pin" or "password"
         public int Iterations = PinIterations;
+        public int PinLength; // 0 = unknown (set up with an older version)
         public byte[] Salt, PinWrap, RecSalt, RecWrap, PublicKey;
 
         public static bool IsSetUp => File.Exists(ConfigPath);
@@ -47,6 +48,7 @@ namespace FileLocker
                 RecSalt = Convert.FromBase64String(d["recSalt"]),
                 RecWrap = Convert.FromBase64String(d["recWrap"]),
                 PublicKey = Convert.FromBase64String(d["publicKey"]),
+                PinLength = d.TryGetValue("pinLength", out var pl) && int.TryParse(pl, out var n) ? n : 0,
             };
         }
 
@@ -63,6 +65,7 @@ namespace FileLocker
             sb.AppendLine("recSalt=" + Convert.ToBase64String(RecSalt));
             sb.AppendLine("recWrap=" + Convert.ToBase64String(RecWrap));
             sb.AppendLine("publicKey=" + Convert.ToBase64String(PublicKey));
+            if (PinLength > 0) sb.AppendLine("pinLength=" + PinLength);
             var tmp = ConfigPath + ".tmp";
             File.WriteAllText(tmp, sb.ToString());
             if (File.Exists(ConfigPath)) File.Replace(tmp, ConfigPath, null);
@@ -90,6 +93,7 @@ namespace FileLocker
         public void SetSecret(byte[] privateKey, string kind, string secret)
         {
             Kind = kind;
+            PinLength = kind == "pin" ? secret.Length : 0;
             Iterations = PinIterations;
             Salt = Crypto.Random(16);
             PinWrap = Crypto.Wrap(Crypto.Derive(secret, Salt, Iterations), privateKey);
@@ -98,6 +102,9 @@ namespace FileLocker
         }
 
         /// <summary>Returns the private key if the PIN/password is right, otherwise null.</summary>
+        /// <summary>Older setups didn't store the PIN length; it's saved after the first correct entry.</summary>
+        public void RememberPinLength(int n) { PinLength = n; Save(); }
+
         public byte[] TryUnlock(string secret) => Crypto.Unwrap(Crypto.Derive(secret, Salt, Iterations), PinWrap);
 
         public byte[] TryRecover(string recoveryKey) =>
@@ -107,7 +114,7 @@ namespace FileLocker
         {
             if (kind == "pin")
             {
-                if (secret.Length < 6) return "The PIN must have at least 6 digits.";
+                if (secret.Length != 6) return "The PIN must be exactly 6 digits.";
                 foreach (var c in secret) if (c < '0' || c > '9') return "A PIN can only contain digits.";
             }
             else if (secret.Length < 8) return "The password must have at least 8 characters.";

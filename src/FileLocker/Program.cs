@@ -32,6 +32,7 @@ namespace FileLocker
         //   FileLocker.exe open <path>     unlock a file, then open it
         //   FileLocker.exe lockall         re-lock everything unlocked with FileLocker
         //   FileLocker.exe remove <path>   remove the lock for good (always asks for the PIN)
+        //   FileLocker.exe watch           background: lock opened things again once they're closed
         [STAThread]
         private static void Main(string[] args)
         {
@@ -48,6 +49,12 @@ namespace FileLocker
         {
             Vault.SessionClear(); // remove the PIN memory file left by version 0.2.0 or earlier
             var verb = args.Length > 0 ? args[0].Trim().TrimStart('-', '/').ToLowerInvariant() : "";
+
+            if (verb == "watch")
+            {
+                if (Vault.IsSetUp) RunWatcher();
+                return;
+            }
 
             if (verb == "" || verb == "setup")
             {
@@ -97,6 +104,27 @@ namespace FileLocker
                     Application.Run(form);
                 }
                 finally { mutex.ReleaseMutex(); }
+            }
+        }
+
+        /// <summary>Starts the background "lock again when closed" watcher if it isn't running.</summary>
+        public static void EnsureWatcher()
+        {
+            try
+            {
+                Process.Start(new ProcessStartInfo(Application.ExecutablePath, "watch") { UseShellExecute = false, CreateNoWindow = true })?.Dispose();
+            }
+            catch { }
+        }
+
+        private static void RunWatcher()
+        {
+            using (var m = new Mutex(false, @"Local\FileLocker.Watcher." + Suffix))
+            {
+                // If another watcher is just finishing, wait for it; if it's busy, it will handle everything.
+                if (!TryTake(m, 5000)) return;
+                try { AutoRelock.RunWatcher(); }
+                finally { m.ReleaseMutex(); }
             }
         }
 

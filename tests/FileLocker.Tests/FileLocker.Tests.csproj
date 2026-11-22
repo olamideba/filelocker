@@ -14,6 +14,7 @@
     <Compile Include="..\..\src\FileLocker\LockedFile.cs" Link="App\LockedFile.cs" />
     <Compile Include="..\..\src\FileLocker\Locker.cs" Link="App\Locker.cs" />
     <Compile Include="..\..\src\FileLocker\Guard.cs" Link="App\Guard.cs" />
+    <Compile Include="..\..\src\FileLocker\AutoRelock.cs" Link="App\AutoRelock.cs" />
   </ItemGroup>
 
   <ItemGroup>

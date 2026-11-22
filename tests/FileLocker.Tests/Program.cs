@@ -31,6 +31,8 @@ namespace FileLocker.Tests
                 Run("vault + folder lock/unlock", () => FolderTests(root));
                 Run("guard blocks system paths", GuardTests);
                 Run("tracking + remove lock for good", () => TrackingTests(root));
+                Run("locks again by itself when closed", () => AutoRelockTests(root));
+                Run("PIN rules", PinRuleTests);
             }
             finally
             {
@@ -315,6 +317,96 @@ namespace FileLocker.Tests
             Check(Tracked.StateOf(gone) == Tracked.State.Missing, "deleted item shows Can't find");
             new Locker(new FakeUi { Key = key }).RemoveLock(gone);
             Check(!Tracked.All().Contains(gone, StringComparer.OrdinalIgnoreCase), "missing item can be taken off the list");
+        }
+
+        private static void AutoRelockTests(string root)
+        {
+            if (!Vault.IsSetUp) Vault.Create("pin", "123456");
+            var key = Vault.Load().TryUnlock("123456");
+            var ui = new FakeUi { Key = key };
+            var quiet = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+            var later = DateTime.UtcNow + AutoRelock.Grace + TimeSpan.FromSeconds(1);
+            int Passes(DateTime now, Func<AutoRelock.Entry, bool> inUse, int n) { int left = 0; for (int i = 0; i < n; i++) left = AutoRelock.Pass(now, inUse, quiet); return left; }
+
+            // A file: opened, then the program closes.
+            var f = Path.Combine(root, "auto.txt");
+            File.WriteAllText(f, "auto");
+            new Locker(ui).Lock(f);
+            var opened = new Locker(ui).Unlock(f + ".locked");
+            AutoRelock.Add(opened, 0);
+            Check(AutoRelock.IsWatched(f), "opened file is watched");
+
+            Passes(DateTime.UtcNow, e => false, AutoRelock.QuietChecksNeeded + 1);
+            Check(File.Exists(f) && !File.Exists(f + ".locked"), "not locked during the start-up grace period");
+
+            Passes(later, e => true, AutoRelock.QuietChecksNeeded + 1);
+            Check(File.Exists(f), "not locked while the program is still using it");
+
+            Passes(later, e => false, AutoRelock.QuietChecksNeeded - 1);
+            Check(File.Exists(f), "not locked until unused for a few checks in a row");
+            int left = Passes(later, e => false, 1);
+            Check(File.Exists(f + ".locked") && !File.Exists(f) && LockedFile.IsLocked(f + ".locked"), "locked again once closed");
+            Check(left == 0 && !AutoRelock.IsWatched(f), "and no longer watched");
+            Check(!Unlocked.All().Contains(f, StringComparer.OrdinalIgnoreCase), "and off the open list");
+
+            // Real "is a program holding it" check.
+            new Locker(ui).Unlock(f + ".locked");
+            using (new FileStream(f, FileMode.Open, FileAccess.Read, FileShare.Read))
+                Check(Probe.HeldOpen(f), "detects a program holding the file (like Word)");
+            Check(!Probe.HeldOpen(f), "detects when that program lets go");
+            Check(Probe.ProcessAlive(Process.GetCurrentProcess().Id) && !Probe.ProcessAlive(int.MaxValue - 7), "detects whether the program is still running");
+
+            // If something keeps the file open, locking waits and tries again.
+            AutoRelock.Add(f, 0);
+            quiet.Clear();
+            using (new FileStream(f, FileMode.Open, FileAccess.Read, FileShare.Read))
+                Passes(later, e => false, AutoRelock.QuietChecksNeeded + 1);
+            Check(File.Exists(f) && AutoRelock.IsWatched(f), "file still open elsewhere: kept on the watch list");
+            Passes(later, e => false, AutoRelock.QuietChecksNeeded + 1);
+            Check(File.Exists(f + ".locked") && !AutoRelock.IsWatched(f), "locked once it's really closed");
+
+            // Locked by hand first: the watcher just drops it.
+            new Locker(ui).Unlock(f + ".locked");
+            AutoRelock.Add(f, 0);
+            new Locker(ui).Lock(f);
+            Check(Passes(later, e => false, 1) == 0 && !AutoRelock.IsWatched(f), "already locked by hand: watcher lets it go");
+
+            // A folder: opened, a file inside still open, then everything closes.
+            var dir = Path.Combine(root, "Auto Folder");
+            Directory.CreateDirectory(dir);
+            var inner = Path.Combine(dir, "inner.txt");
+            File.WriteAllText(inner, "inner");
+            File.WriteAllText(Path.Combine(dir, "other.txt"), "other");
+            new Locker(ui).Lock(dir);
+            new Locker(ui).Unlock(dir);
+            AutoRelock.Add(dir, 0);
+            quiet.Clear();
+            using (new FileStream(inner, FileMode.Open, FileAccess.Read, FileShare.Read))
+                Passes(later, e => false, AutoRelock.QuietChecksNeeded + 1);
+            Check(File.Exists(inner) && AutoRelock.IsWatched(dir) && Unlocked.All().Contains(dir, StringComparer.OrdinalIgnoreCase),
+                "folder with a file still open: stays watched");
+            Passes(later, e => false, AutoRelock.QuietChecksNeeded + 1);
+            Check(File.Exists(inner + ".locked") && File.Exists(Path.Combine(dir, "other.txt.locked")) && Folder.IsMarked(dir) && !AutoRelock.IsWatched(dir),
+                "folder fully locked again once closed");
+
+            // Moved/deleted while open: dropped quietly.
+            var g = Path.Combine(root, "vanish.txt");
+            File.WriteAllText(g, "v");
+            new Locker(ui).Lock(g);
+            new Locker(ui).Unlock(g + ".locked");
+            AutoRelock.Add(g, 0);
+            File.Delete(g);
+            Check(Passes(later, e => false, 1) == 0 && !AutoRelock.IsWatched(g), "deleted while open: dropped");
+        }
+
+        private static void PinRuleTests()
+        {
+            Check(Vault.ValidateSecret("pin", "123456") == null, "6 digits accepted");
+            Check(Vault.ValidateSecret("pin", "12345") != null, "5 digits refused");
+            Check(Vault.ValidateSecret("pin", "1234567") != null, "7 digits refused");
+            Check(Vault.ValidateSecret("pin", "12a456") != null, "letters refused");
+            Check(Vault.ValidateSecret("password", "longenough") == null, "password of 8+ accepted");
+            Check(Vault.Load().PinLength == 6, "PIN length is remembered for the 6-box entry");
         }
 
         private static void GuardTests()
