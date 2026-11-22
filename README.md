@@ -35,7 +35,7 @@ Open **FileLocker** from the Start menu. It lists everything you've locked: **Lo
 
 **On Windows 11** the FileLocker entries sit under **"Show more options"** in the right-click menu. Holding **Shift** while right-clicking opens that full menu directly.
 
-After you type your PIN, FileLocker remembers it for **5 minutes**, so opening several files in a row only asks once. *Lock everything* ends that early.
+FileLocker asks for your PIN **every time** something locked is opened. It never remembers it.
 
 Selecting many files and choosing *Lock* (or *Unlock*) handles them together in one window, with one PIN prompt.
 
@@ -65,7 +65,7 @@ Either way, your PIN, recovery key, list and locked files stay exactly as they a
 - At setup a 2048-bit RSA key pair is created. The **public** key is stored as-is, which is why locking never asks for your PIN. The **private** key is stored encrypted twice: once with a key derived from your PIN/password (PBKDF2-SHA256, 200,000 rounds) and once with a key derived from the recovery key.
 - Each file gets its own random AES-256 key. Its bytes are overwritten with AES-256-CTR ciphertext (same length), and a 512-byte trailer is appended holding the file key (RSA-OAEP encrypted) and the original length.
 - The trailer records how far encryption has got. If the PC loses power mid-lock or mid-unlock, unlocking still restores the file.
-- The folder padlock is a standard `desktop.ini` icon. The 5-minute PIN memory is encrypted with Windows DPAPI, readable only by your Windows account.
+- The folder padlock is a standard `desktop.ini` icon.
 
 Built with C# on .NET Framework 4.7.2 (WinForms) and Inno Setup. Every push is built and tested on a real Windows machine by GitHub Actions.
 

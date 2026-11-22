@@ -91,7 +91,7 @@ namespace FileLocker
             "Things you open stay open until you lock them again. Click \"Lock everything now\".\n\n" +
             "REMOVE A LOCK FOR GOOD\n" +
             "In the FileLocker window, select it and click \"Remove lock…\". You'll need your PIN.\n\n" +
-            "After you type your PIN, FileLocker remembers it for 5 minutes, so you can open several things in a row.";
+            "FileLocker asks for your PIN every time something locked is opened. It never remembers it.";
     }
 
     /// <summary>"PIN or password" picker with an entry box and a confirmation box.</summary>

@@ -129,12 +129,9 @@ namespace FileLocker
 
         public byte[] GetPrivateKey(bool fresh)
         {
+            // The PIN is asked every time; it's never remembered between separate opens.
+            // (Several files selected and opened together share one prompt.)
             if (_cancelled) return null;
-            if (!fresh)
-            {
-                var cached = Vault.SessionGet();
-                if (cached != null) return cached;
-            }
             byte[] key = null;
             Invoke(new Action(() =>
             {
@@ -142,7 +139,6 @@ namespace FileLocker
                 key = PinDialog.Ask(this, fresh ? "to remove the lock from \"" + name + "\" for good" : "to unlock " + name);
             }));
             if (key == null) _cancelled = true;
-            else Vault.SessionSet(key);
             return key;
         }
 

@@ -18,7 +18,6 @@ namespace FileLocker
     {
         public const int PinIterations = 200000;
         public const int RecoveryIterations = 20000;
-        private const int SessionMinutes = 5;
 
         public static string Dir => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "FileLocker");
         public static string LocalDir => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "FileLocker");
@@ -115,36 +114,9 @@ namespace FileLocker
             return null;
         }
 
-        // ---- Short session so you don't retype the PIN for every file you open in a row. ----
-        // The private key is kept for a few minutes, encrypted by Windows (DPAPI) so only this
-        // Windows user account can read it. "Lock everything" ends the session immediately.
-
-        private static readonly byte[] SessionEntropy = Encoding.ASCII.GetBytes("FileLocker.Session.v1");
-
-        public static byte[] SessionGet()
-        {
-            try
-            {
-                if (!File.Exists(SessionPath)) return null;
-                var raw = ProtectedData.Unprotect(File.ReadAllBytes(SessionPath), SessionEntropy, DataProtectionScope.CurrentUser);
-                long expires = BitConverter.ToInt64(raw, 0);
-                if (DateTime.UtcNow.Ticks > expires) { SessionClear(); return null; }
-                return Crypto.Slice(raw, 8, raw.Length - 8);
-            }
-            catch { SessionClear(); return null; }
-        }
-
-        public static void SessionSet(byte[] privateKey)
-        {
-            try
-            {
-                Directory.CreateDirectory(LocalDir);
-                var expires = BitConverter.GetBytes(DateTime.UtcNow.AddMinutes(SessionMinutes).Ticks);
-                File.WriteAllBytes(SessionPath, ProtectedData.Protect(Crypto.Concat(expires, privateKey), SessionEntropy, DataProtectionScope.CurrentUser));
-            }
-            catch { /* the session is a convenience only */ }
-        }
-
+        // Version 0.2.0 and earlier remembered the PIN for 5 minutes in this file. That let a
+        // double-click open a locked file without the PIN, so it was removed. The file is still
+        // deleted wherever it might be left over.
         public static void SessionClear()
         {
             try { if (File.Exists(SessionPath)) File.Delete(SessionPath); } catch { }

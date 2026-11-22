@@ -12,7 +12,7 @@
     <RootNamespace>FileLocker</RootNamespace>
     <ApplicationIcon>..\..\assets\app.ico</ApplicationIcon>
     <ApplicationManifest>app.manifest</ApplicationManifest>
-    <Version>0.2.0</Version>
+    <Version>0.2.1</Version>
     <Product>FileLocker</Product>
     <Description>Lock files and folders with a PIN or password.</Description>
     <Copyright>MIT License</Copyright>

@@ -46,6 +46,7 @@ namespace FileLocker
 
         private static void Run(string[] args)
         {
+            Vault.SessionClear(); // remove the PIN memory file left by version 0.2.0 or earlier
             var verb = args.Length > 0 ? args[0].Trim().TrimStart('-', '/').ToLowerInvariant() : "";
 
             if (verb == "" || verb == "setup")
