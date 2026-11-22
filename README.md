@@ -27,15 +27,18 @@ Open **FileLocker** from the Start menu. It lists everything you've locked: **Lo
 | --- | --- |
 | Lock a file or folder | In FileLocker: **Lock a file…** / **Lock a folder…**. Or right-click it → **Lock with FileLocker** |
 | Open something locked | Double-click it (in FileLocker or in your folders), then type your PIN |
-| Lock it again when you're done | In FileLocker: **Lock everything now** (or select it → **Lock again**). Also in the right-click menu on empty space: **Lock everything I unlocked** |
-| Unlock a whole folder | Right-click it → **Unlock folder with FileLocker**, or double-click it in FileLocker |
+| Lock it again when you're done | Nothing to do: **close the program** (or the folder window) and it locks itself again a few seconds later. To lock right away: FileLocker → **Lock everything now** |
+| Open a whole folder | Right-click it → **Unlock and open folder**, or double-click it in FileLocker. It locks again when you close the folder window |
+| Unlock without auto-locking | Right-click a locked file → **Unlock and keep unlocked**. It stays open until you lock it again |
 | **Remove a lock for good** | In FileLocker: select it → **Remove lock…** → type your PIN. Only possible from the app, and the PIN is always asked for, even if you typed it a minute ago |
 | Change your PIN | FileLocker → *Change PIN or password* |
 | Forgot your PIN | FileLocker → *Forgot PIN?*, or double-click a locked file → *Forgot it? Use your recovery key* |
 
 **On Windows 11** the FileLocker entries sit under **"Show more options"** in the right-click menu. Holding **Shift** while right-clicking opens that full menu directly.
 
-FileLocker asks for your PIN **every time** something locked is opened. It never remembers it.
+FileLocker asks for your PIN **every time** something locked is opened. It never remembers it. A PIN is exactly 6 digits, typed into 6 boxes; it checks automatically when the 6th digit is in.
+
+**How "locks again when closed" works:** a small background part of FileLocker checks every 2 seconds whether the file is still in use: is the program that opened it still running, does a program still hold the file, does a window title still show its name, and (for folders) is an Explorer window still showing it. After about 6 seconds of nothing using it, it's locked again. It also runs when you sign in, to finish anything left open at shutdown. Some apps don't show the file name or hold the file; for those it may lock again while the app is still on screen, which is harmless because the app already has what it loaded.
 
 Selecting many files and choosing *Lock* (or *Unlock*) handles them together in one window, with one PIN prompt.
 
@@ -49,7 +52,7 @@ Either way, your PIN, recovery key, list and locked files stay exactly as they a
 
 - A locked file is renamed `name.ext.locked` and its contents are AES-256 encrypted. Other programs can't open it, and neither can someone who copies it to a USB stick or removes the hard drive.
 - In a locked folder, every file inside is locked and the folder shows a padlock. You can still browse a locked folder and see the file **names**. Their **contents** need the PIN.
-- Unlocked things **stay unlocked until you lock them again.** FileLocker keeps track of them, so *Lock everything I unlocked* puts them all back.
+- Things you open **lock themselves again when you close them.** *Lock everything now* locks everything immediately.
 
 ## Good to know
 
